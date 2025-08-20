@@ -15,7 +15,7 @@ app.use(express.json());
 // ⚠️ Asegúrate de tener GEMINI_API_KEY en Render (Environment Variables)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // Modelos válidos: "gemini-1.5-flash", "gemini-1.5-pro"
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 app.get("/health", (_req, res) => res.json({ ok: true, service: "gemini-backend" }));
 
@@ -49,3 +49,4 @@ ${message}`;
 });
 
 app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
+
