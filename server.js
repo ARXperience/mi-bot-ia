@@ -1,47 +1,84 @@
-// server.js
-import express from "express";
-import bodyParser from "body-parser";
-import cors from "cors";
-import dotenv from "dotenv";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+// server.js (CommonJS)
+// Requisitos: npm i express cors dotenv node-fetch@2
 
-dotenv.config();
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const fetch = require("node-fetch");
 
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
-app.use(cors()); // permite peticiones desde cualquier origen
-app.use(bodyParser.json());
+// --- Configuración CORS ---
+// Puedes restringir a tu dominio de Hostinger si quieres:
+// const ALLOWED_ORIGINS = ["https://gold-snail-248674.hostingersite.com"];
+// app.use(cors({ origin: ALLOWED_ORIGINS }));
+app.use(cors()); // abierto (útil para pruebas)
 
-// Configura Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+app.use(express.json());
 
-// Ruta principal de prueba
-app.get("/", (req, res) => {
-  res.send("Servidor de Gemini activo");
+// Healthcheck
+app.get("/health", (_req, res) => {
+  res.json({ ok: true, service: "gemini-backend" });
 });
 
-// Ruta para el frontend: /api/gemini
+// Endpoint principal
 app.post("/api/gemini", async (req, res) => {
-  const { prompt } = req.body;
-
-  if (!prompt) {
-    return res.status(400).json({ error: "Falta el prompt" });
-  }
-
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const { message, context = "" } = req.body || {};
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({ error: "Falta 'message' (string) en el body." });
+    }
 
-    res.json({ respuesta: text });
-  } catch (error) {
-    console.error("Error al generar contenido:", error);
-    res.status(500).json({ error: "Error al generar respuesta con Gemini" });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: "Falta configurar GEMINI_API_KEY en variables de entorno." });
+    }
+
+    // Prompt combinado con contexto opcional
+    const prompt = `
+Responde de forma clara y útil. Usa el contexto sólo si ayuda.
+
+Contexto:
+${context}
+
+Pregunta del usuario:
+${message}
+    `.trim();
+
+    // Llamada a la API de Gemini (modelo de texto)
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
+    const body = {
+      contents: [{ parts: [{ text: prompt }] }]
+    };
+
+    const geminiRes = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+    const data = await geminiRes.json();
+
+    // Intenta extraer el texto de la respuesta
+    const text =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+      data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data ||
+      null;
+
+    if (!text) {
+      // Log para depurar en Render (no se envía al cliente)
+      console.error("Respuesta inesperada de Gemini:", JSON.stringify(data, null, 2));
+      return res.status(502).json({ error: "No pude generar la respuesta (Gemini sin texto)." });
+    }
+
+    return res.json({ response: text });
+  } catch (err) {
+    console.error("Error /api/gemini:", err);
+    return res.status(500).json({ error: "Error interno al consultar Gemini." });
   }
 });
 
-app.listen(port, () => {
-  console.log(`Servidor corriendo en http://localhost:${port}`);
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en puerto ${PORT}`);
 });
